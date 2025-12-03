@@ -15,6 +15,10 @@ jobs:
     name: Terraform Apply
     runs-on: ubuntu-latest
 
+    concurrency:
+      group: terraform-apply-${{ github.ref }}
+      cancel-in-progress: true
+
     defaults:
       run:
         working-directory: infra/terraform
@@ -35,14 +39,30 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Terraform Init (Reconfigure)
-        run: terraform init -reconfigure
+      - name: Debug (show infra folder)
+        run: |
+          echo "PWD: $(pwd)"
+          echo "Listing current working directory:"
+          ls -la
+          echo "Checking terraform.tfvars:"
+          if [ -f terraform.tfvars ]; then
+            echo "---- terraform.tfvars ----"
+            sed -n '1,200p' terraform.tfvars
+            echo "--------------------------"
+          else
+            echo "terraform.tfvars not found!"
+          fi
 
+      - name: Terraform Init (Reconfigure, non-interactive)
+        run: terraform init -reconfigure -input=false
 
-      - name: Terraform Plan
-        run: terraform plan
+      - name: Terraform Validate
+        run: terraform validate
 
-      - name: Terraform Apply
+      - name: Terraform Plan (non-interactive, wait for lock)
+        run: terraform plan -input=false -lock-timeout=300s -var-file=terraform.tfvars -out=tfplan
+
+      - name: Terraform Apply (non-interactive)
         env:
           GZIP: "false"
-        run: terraform apply -auto-approve
+        run: terraform apply -input=false -auto-approve tfplan
